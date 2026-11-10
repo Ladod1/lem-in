@@ -6,14 +6,14 @@ package main
 // set of paths needs, keeping the best set.
 
 type edge struct {
-	to, cap, flow, rev int
+	to, cap, flow, cost, rev int
 }
 
 type graph [][]edge
 
-func (g graph) add(a, b, c int) {
-	g[a] = append(g[a], edge{to: b, cap: c, rev: len(g[b])})
-	g[b] = append(g[b], edge{to: a, cap: 0, rev: len(g[a]) - 1})
+func (g graph) add(a, b, c, cost int) {
+	g[a] = append(g[a], edge{to: b, cap: c, cost: cost, rev: len(g[b])})
+	g[b] = append(g[b], edge{to: a, cap: 0, cost: -cost, rev: len(g[a]) - 1})
 }
 
 func findPaths(f *Farm) [][]int {
@@ -24,9 +24,9 @@ func findPaths(f *Farm) [][]int {
 		if i == f.start || i == f.end {
 			c = f.ants
 		}
-		g.add(2*i, 2*i+1, c)
+		g.add(2*i, 2*i+1, c, 0)
 		for _, j := range f.links[i] {
-			g.add(2*i+1, 2*j, 1)
+			g.add(2*i+1, 2*j, 1, 1)
 		}
 	}
 	src, sink := 2*f.start+1, 2*f.end
@@ -46,22 +46,33 @@ func findPaths(f *Farm) [][]int {
 	return best
 }
 
-// augment finds one path in the residual graph with BFS and pushes flow on it.
+// augment finds the shortest new path (counting tunnels) in the residual
+// graph and pushes flow on it. Going back through a used tunnel counts -1,
+// so it can also reroute old paths when that makes the total shorter.
 func augment(g graph, src, sink int) bool {
 	type step struct{ node, edge int }
 	prev := make([]step, len(g))
+	dist := make([]int, len(g))
+	inQueue := make([]bool, len(g))
 	for i := range prev {
 		prev[i].node = -1
+		dist[i] = 1 << 30
 	}
 	prev[src].node = src
+	dist[src] = 0
 	queue := []int{src}
-	for len(queue) > 0 && prev[sink].node == -1 {
+	for len(queue) > 0 {
 		u := queue[0]
 		queue = queue[1:]
+		inQueue[u] = false
 		for i, e := range g[u] {
-			if prev[e.to].node == -1 && e.cap-e.flow > 0 {
+			if e.cap-e.flow > 0 && dist[u]+e.cost < dist[e.to] {
+				dist[e.to] = dist[u] + e.cost
 				prev[e.to] = step{u, i}
-				queue = append(queue, e.to)
+				if !inQueue[e.to] {
+					inQueue[e.to] = true
+					queue = append(queue, e.to)
+				}
 			}
 		}
 	}
